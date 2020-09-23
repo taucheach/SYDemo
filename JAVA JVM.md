@@ -95,6 +95,161 @@ JVM的内存区域
 	2)传统I/O的流操作是阻塞模式，NIO的流操作是非阻塞模式。
 	
 Java NIO的使用:
+
+	服务端
+
+	```
+	public class MyServer {
+	    private int size=1024;
+	    private ServerSocketChannel serverSocketChannel;
+	    private ByteBuffer byteBuffer;
+	    private Selector selector;
+	    private int remoteClientNum=0;
+	    public MyServer(int port){
+	        //在构造函数中初始化监听
+	        try {
+	            initChannel(port);
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	            System.exit(-1);
+	        }
+	    }
+	    //Channel的初始化
+	    public void initChannel(int port) throws IOException {
+	        //打开Channel
+	        serverSocketChannel=ServerSocketChannel.open();
+	        //设置为非阻塞模式
+	        serverSocketChannel.configureBlocking(false);
+	        //绑定端口
+	        serverSocketChannel.bind(new InetSocketAddress(port));
+	        System.out.println("listenter on port:"+port);
+	        //创建选择器
+	        selector=Selector.open();
+	        //向选择器注册通道
+	        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+	        //分配缓冲区的大小
+	        byteBuffer=ByteBuffer.allocate(size);
+	    }
+	    //监听器，用于监听Channel上的数据变化
+	    public void listener() throws IOException {
+	        while (true){
+	            //返回的int值表示有多少个Channel处于就绪状态
+	            int n=selector.select();
+	            if(n==0){
+	                continue;
+	            }
+	            //每个selector对应多个SelectionKey,每个SelectionKey一个Channel
+	            Iterator<SelectionKey> iterator=selector.selectedKeys().iterator();
+	            while (iterator.hasNext()){
+	                SelectionKey key=iterator.next();
+	                //如果SelectionKey处于连接就绪状态，则开始接受客户端的连接
+	                if(key.isAcceptable()){
+	                    //获取Channel
+	                    ServerSocketChannel server=(ServerSocketChannel)key.channel();
+	                    //Channel接受连接
+	                    SocketChannel channel=server.accept();
+	                    //Channel注册
+	                    registerChannel(selector,channel,SelectionKey.OP_READ);
+	                    //远程客户端的连接数统计
+	                    remoteClientNum++;
+	                    System.out.println("online client num="+remoteClientNum);
+	                    write(channel,"hello client".getBytes());
+	                    //如果通道处于就绪装状态，则读取通道的数据
+	                    System.out.println(key.isReadable());
+	                    System.out.println(key.isAcceptable());
+	                    if(key.isReadable()){
+	                        read(key);
+	                    }
+	                    iterator.remove();
+	                }
+	            }
+	        }
+	    }
+	
+	    private void read(SelectionKey key) throws IOException {
+	        System.out.println("+++++++++++++");
+	        SocketChannel socketChannel=(SocketChannel)key.channel();
+	        int count;
+	        byteBuffer.clear();
+	        //从通道读数据到缓存区
+	        while ((count=socketChannel.read(byteBuffer))>0){
+	            //byteBuffer写模式变为读模式
+	            byteBuffer.flip();
+	            while (byteBuffer.hasRemaining()){
+	                System.out.println("---------------------");
+	                System.out.println((char) byteBuffer.get());
+	            }
+	            byteBuffer.clear();
+	        }
+	        if(count<0){
+	            socketChannel.close();
+	        }
+	    }
+	
+	
+	    public void write(SocketChannel channel,byte[] writeData) throws IOException {
+	        byteBuffer.clear();
+	        byteBuffer.put(writeData);
+	        //从写模式变为读模式
+	        byteBuffer.flip();
+	        //将缓存区的数据写入通道
+	        channel.write(byteBuffer);
+	    }
+	
+	    public void registerChannel(Selector selector,SocketChannel channel,int opRead) throws IOException {
+	        if (channel==null){
+	            return;
+	        }
+	        channel.configureBlocking(false);
+	        channel.register(selector,opRead);
+	    }
+	}
+
+客户端
+
+	```
+		public class MyClient {
+	    private int size=1024;
+	    private ByteBuffer byteBuffer;
+	    private SocketChannel socketChannel;
+	    public void connectServer() throws IOException {
+	//        socketChannel.open();
+	        socketChannel=SocketChannel.open();
+	        socketChannel.connect(new InetSocketAddress("127.0.0.1",9999));
+	        socketChannel.configureBlocking(false);
+	        byteBuffer=ByteBuffer.allocate(size);
+	        receive();
+	    }
+	
+	
+	    public void receive() throws IOException {
+	        while (true){
+	            byteBuffer.clear();
+	            int count;
+	            //如果没有数据可读，则read方法一直阻塞，直到读到新的数据
+	            while ((count=socketChannel.read(byteBuffer))>0){
+	                byteBuffer.flip();
+	                while (byteBuffer.hasRemaining()){
+	                    System.out.print((char) byteBuffer.get());
+	                }
+	                System.out.println();
+	                sendToServer("say hi".getBytes());
+	                byteBuffer.clear();
+	            }
+	        }
+	    }
+	
+	    private void sendToServer(byte[] bytes) throws IOException {
+	        byteBuffer.clear();
+	        byteBuffer.put(bytes);
+	        byteBuffer.flip();
+	        socketChannel.write(byteBuffer);
+	    }
+	}
+
+
+	
+
 	
 	
 
